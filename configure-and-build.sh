@@ -21,6 +21,7 @@ mkdir -p "$output_dir"
 cp "$repo_dir/sm8250-huawei-dby-w09.dts" "$board_dts"
 cp "$repo_dir/usb/typec.dtsi" "$(dirname "$board_dts")/dby-w09-typec.dtsi"
 cp "$repo_dir/power/power.dtsi" "$(dirname "$board_dts")/dby-w09-power.dtsi"
+cp "$repo_dir/camera/camera.dtsi" "$(dirname "$board_dts")/dby-w09-camera.dtsi"
 python3 "$repo_dir/power/install_into_tree.py" "$source_dir"
 if ! grep -q 'sm8250-huawei-dby-w09.dtb' "$source_dir/arch/arm64/boot/dts/qcom/Makefile"; then
     sed -i '/sm8250-hdk.dtb/a dtb-$(CONFIG_ARCH_QCOM)\t+= sm8250-huawei-dby-w09.dtb' \
@@ -33,6 +34,8 @@ python3 "$repo_dir/panel/install_into_tree.py" "$source_dir"
 python3 "$repo_dir/sound/sm8250-pri-tdm.py" "$source_dir"
 python3 "$repo_dir/sound/q6afe-dp-stream.py" "$source_dir"
 python3 "$repo_dir/usb/vg27a-native-modes.py" "$source_dir"
+# Rear camera sensor from the device tree, with all three rails.
+python3 "$repo_dir/camera/ov13b10-of.py" "$source_dir"
 # TDM group device setup in q6afe (snd-q6afe.ko), as the downstream driver.
 python3 "$repo_dir/sound/q6afe-tdm-group.py" "$source_dir"
 # TDM invert-sync/data-delay/data-out from the DT actually reach the DSP.
@@ -89,6 +92,8 @@ module_options=(BT_HCIUART_SERDEV BT_HCIUART_QCA)
 extra_modules=(EXFAT_FS NTFS3_FS USB_UAS)
 # Rear camera flash LED (PM8150L), used as the flashlight.
 extra_modules+=(LEDS_QCOM_FLASH)
+# Cameras: camera clocks, CCI (sensor I2C), CAMSS and the two sensors.
+extra_modules+=(SM_CAMCC_8250 I2C_QCOM_CCI VIDEO_QCOM_CAMSS VIDEO_OV13B10 VIDEO_HI846)
 # defconfig targets every arm64 board. Only Qualcomm stays: switching off the
 # other SoC platforms drops their drivers too; the rest are PCIe, server and
 # network drivers this tablet has no hardware for (about 1300 -> 800 modules).
