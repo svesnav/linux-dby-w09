@@ -25,8 +25,9 @@ app that installs both lives in
 | Volume/power keys, cover | work | |
 | USB-C host, DP Alt Mode, HDMI audio | work | `usb/README.md` |
 | Battery, charging LED | work | `power/matepad-fg.c`, `power/README.md` |
+| Flashlight (rear flash LED) | works | PM8150L flash block, `white:flash` (torch mode) |
 | Suspend | works | Sleep button suspends; cover/power key blank the screen |
-| Cameras | not supported | |
+| Cameras | not supported | rear OV13B10 and front Hi-846 have mainline drivers; CAMSS wiring not done |
 | RTC | not supported | time comes from NTP |
 
 ## Boot flow
