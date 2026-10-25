@@ -70,12 +70,18 @@ REGULATOR_QCOM_USB_VBUS DRM_MSM_DP
     POWER_SEQUENCING PCIE_QCOM SERIAL_QCOM_GENI SERIAL_DEV_BUS
     SPI SPI_QCOM_GENI TOUCHSCREEN_HUAWEI_THP_LITE
     ANDROID_BINDER_IPC ANDROID_BINDERFS UHID HIDRAW INPUT_UINPUT
+    FW_LOADER_COMPRESS FW_LOADER_COMPRESS_ZSTD FW_LOADER_COMPRESS_XZ
 )
+# Ubuntu's linux-firmware is zstd-compressed (GPU, Wi-Fi, Bluetooth): the
+# FW_LOADER_COMPRESS* entries above let the kernel read it.
 # Wi-Fi requests its firmware at probe time, before the microSD root is
 # mounted, and Bluetooth/PCI power control can only be modules here: all of
 # the QCA6390 stack is installed on the card by build_modules.sh.
 modules=(MHI_BUS QRTR QRTR_MHI ATH11K ATH11K_PCI POWER_SEQUENCING_QCOM_WCN
-    PCI_PWRCTRL_PWRSEQ BT BT_HCIUART BT_QCA)
+    PCI_PWRCTRL_PWRSEQ BT BT_HCIUART BT_QCA
+    # the speaker link's codec stub (linux,spdif-dit); defconfig only had it
+    # through other SoCs' sound drivers
+    SND_SOC_SPDIF)
 # Bool options inside those modules.
 module_options=(BT_HCIUART_SERDEV BT_HCIUART_QCA)
 # Useful on USB-C host that defconfig leaves out: exFAT/NTFS cards and drives,
