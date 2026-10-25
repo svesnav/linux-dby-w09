@@ -60,12 +60,17 @@
 
 &apps_rsc {
 	regulators-1 {
-		/* Camera sensor I/O (stock "pm8150a_l5", cam_vio). */
+		/*
+		 * Camera sensor I/O (stock "pm8150a_l5", cam_vio). Also the CCI0
+		 * bus level: the lens driver (DW9714) does not answer while it is
+		 * off, and the lens is powered without the sensor. Kept on.
+		 */
 		vreg_l5c_1p8: ldo5 {
 			regulator-name = "pm8150l_l5";
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-always-on;
 		};
 
 		/* Rear autofocus VCM (stock "pm8150a_l7", cam_vaf). */
