@@ -87,6 +87,8 @@ module_options=(BT_HCIUART_SERDEV BT_HCIUART_QCA)
 # Useful on USB-C host that defconfig leaves out: exFAT/NTFS cards and drives,
 # USB Attached SCSI (fast USB SSDs and card readers).
 extra_modules=(EXFAT_FS NTFS3_FS USB_UAS)
+# Rear camera flash LED (PM8150L), used as the flashlight.
+extra_modules+=(LEDS_QCOM_FLASH)
 # defconfig targets every arm64 board. Only Qualcomm stays: switching off the
 # other SoC platforms drops their drivers too; the rest are PCIe, server and
 # network drivers this tablet has no hardware for (about 1300 -> 800 modules).
