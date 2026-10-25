@@ -1,0 +1,939 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Huawei MatePad 11 (2021), DBY-W09: native Linux 7.0 port.
+ *
+ * Board identity, memory map and the UFS/USB supplies were checked against
+ * the stock HarmonyOS 4.2 device tree (extracted/merged.dts).  The structure
+ * follows sm8250-xiaomi-elish-common.dtsi, the closest upstream board (same
+ * SoC, PMICs, 1600x2560 dual-DSI NT36523 panel and splash buffer address).
+ * The panel chain (lcd_kit_debussy_110_20d_10p9_qcom) is: VCI = PM8150L L11,
+ * IOVCC = load switch on GPIO 6, VSP/VSN = TPS65132 (GPIO 11/12), reset
+ * GPIO 38, RT8555 backlight (enable GPIO 10), both on QUP i2c11.
+ * Touch, wireless, DSPs, speakers and microphones are described below;
+ * USB-C/DP wiring is in dby-w09-typec.dtsi. Pen is not yet implemented.
+ */
+/dts-v1/;
+
+#include <dt-bindings/arm/qcom,ids.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/phy/phy.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+#include <dt-bindings/sound/qcom,q6asm.h>
+#include <dt-bindings/usb/pd.h>
+#include "sm8250.dtsi"
+#include "pm8150.dtsi"
+#include "pm8150b.dtsi"
+#include "pm8150l.dtsi"
+
+/ {
+	model = "Huawei MatePad 11 (2021) DBY-W09";
+	compatible = "huawei,dby-w09", "qcom,sm8250";
+	chassis-type = "tablet";
+
+	/*
+	 * Like the stock base DTBs: ABL picks the SoC DTB by msm-id with a zero
+	 * board-id, then the DTBO entry for board 0x206a (dby-w09-rootparam.dtso).
+	 */
+	qcom,msm-id = <QCOM_ID_SM8250 0x20001>; /* SM8250 v2.1 */
+	qcom,board-id = <0 0>;
+
+	/*
+	 * Huawei's ABL refuses to boot unless the overlaid tree carries the
+	 * board identity in /rootparam (qcom,boardid digits of 8298 = 0x206a).
+	 * The DTBO fills it; the same values here keep the tree self-describing.
+	 */
+	rootparam: rootparam {
+		qcom,boardid = <0x08 0x02 0x09 0x08>;
+		qcom,board_name = "DBY_W09_VG";
+		qcom,product_name = "DBY-W09";
+		hardware_version = "SH1DBSLM";
+		huawei,modem_id = <0xffffffff 0x00>;
+	};
+
+	aliases {
+		/* qcom_geni_serial needs a line number ("Invalid line -19"). */
+		serial0 = &uart6;
+	};
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* The bootloader leaves the Huawei logo scanning out of this buffer. */
+		framebuffer: framebuffer@9c000000 {
+			compatible = "simple-framebuffer";
+			reg = <0x0 0x9c000000 0x0 0x2300000>;
+			width = <1600>;
+			height = <2560>;
+			stride = <(1600 * 4)>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&vol_up_n>;
+
+		key-vol-up {
+			label = "Volume Up";
+			gpios = <&pm8150_gpios 6 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEUP>;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+
+	/*
+	 * QCA6390 Wi-Fi/BT: stock cnss-qca6390 uses WLAN_EN on GPIO 20, BT_EN on
+	 * GPIO 21, and pm8150 s6 (0.95 V), s4 (1.8 V), s5 (1.9 V), pm8150l s8
+	 * (1.35 V) -- the same as the Xiaomi Pad 5 Pro, whose node this follows.
+	 */
+	qca6390-pmu {
+		compatible = "qcom,qca6390-pmu";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_en_state>, <&wlan_en_state>;
+
+		vddaon-supply = <&vreg_s6a_0p95>;
+		vddpmu-supply = <&vreg_s6a_0p95>;
+		vddrfa0p95-supply = <&vreg_s6a_0p95>;
+		vddrfa1p3-supply = <&vreg_s8c_1p35>;
+		vddrfa1p9-supply = <&vreg_s5a_1p9>;
+		vddpcie1p3-supply = <&vreg_s8c_1p35>;
+		vddpcie1p9-supply = <&vreg_s5a_1p9>;
+		vddio-supply = <&vreg_s4a_1p8>;
+
+		wlan-enable-gpios = <&tlmm 20 GPIO_ACTIVE_HIGH>;
+		bt-enable-gpios = <&tlmm 21 GPIO_ACTIVE_HIGH>;
+
+		regulators {
+			vreg_pmu_rfa_cmn: ldo0 {
+				regulator-name = "vreg_pmu_rfa_cmn";
+			};
+
+			vreg_pmu_aon_0p59: ldo1 {
+				regulator-name = "vreg_pmu_aon_0p59";
+			};
+
+			vreg_pmu_wlcx_0p8: ldo2 {
+				regulator-name = "vreg_pmu_wlcx_0p8";
+			};
+
+			vreg_pmu_wlmx_0p85: ldo3 {
+				regulator-name = "vreg_pmu_wlmx_0p85";
+			};
+
+			vreg_pmu_btcmx_0p85: ldo4 {
+				regulator-name = "vreg_pmu_btcmx_0p85";
+			};
+
+			vreg_pmu_rfa_0p8: ldo5 {
+				regulator-name = "vreg_pmu_rfa_0p8";
+			};
+
+			vreg_pmu_rfa_1p2: ldo6 {
+				regulator-name = "vreg_pmu_rfa_1p2";
+			};
+
+			vreg_pmu_rfa_1p7: ldo7 {
+				regulator-name = "vreg_pmu_rfa_1p7";
+			};
+
+			vreg_pmu_pcie_0p9: ldo8 {
+				regulator-name = "vreg_pmu_pcie_0p9";
+			};
+
+			vreg_pmu_pcie_1p8: ldo9 {
+				regulator-name = "vreg_pmu_pcie_1p8";
+			};
+		};
+	};
+
+	/*
+	 * Microphones: WCD938x (stock bolero wcd938x-codec, same wiring as
+	 * sm8250-mtp): reset GPIO 32, S4A 1.8 V, mic bias from BOB at 1.8 V.
+	 * Four analog mics (three on the top edge, one at the rear camera).
+	 */
+	wcd938x: audio-codec {
+		compatible = "qcom,wcd9380-codec";
+		/*
+		 * No "sleep" pin state: it ended up selected and drove the reset
+		 * line low, holding the codec in reset (SoundWire devices stayed
+		 * UNATTACHED). sm8250-mtp has none either.
+		 */
+		pinctrl-names = "default";
+		pinctrl-0 = <&wcd938x_reset_default>;
+
+		reset-gpios = <&tlmm 32 GPIO_ACTIVE_LOW>;
+
+		vdd-buck-supply = <&vreg_s4a_1p8>;
+		vdd-rxtx-supply = <&vreg_s4a_1p8>;
+		vdd-io-supply = <&vreg_s4a_1p8>;
+		vdd-mic-bias-supply = <&vreg_bob>;
+
+		qcom,micbias1-microvolt = <1800000>;
+		qcom,micbias2-microvolt = <1800000>;
+		qcom,micbias3-microvolt = <1800000>;
+		qcom,micbias4-microvolt = <1800000>;
+		qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000 500000 500000 500000 500000>;
+		qcom,mbhc-headset-vthreshold-microvolt = <1700000>;
+		qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
+		qcom,rx-device = <&wcd_rx>;
+		qcom,tx-device = <&wcd_tx>;
+
+		#sound-dai-cells = <1>;
+	};
+
+	/* Codec stub for the TDM speaker link (see &sound). */
+	speaker_amps: audio-codec-stub {
+		compatible = "linux,spdif-dit";
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Amps";
+	};
+
+	vph_pwr: vph-pwr-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vph_pwr";
+		regulator-min-microvolt = <3700000>;
+		regulator-max-microvolt = <3700000>;
+		regulator-always-on;
+	};
+
+	/*
+	 * lcd-kit,lcd-iovcc = <GPIO_MODE 6>: a load switch from the 1.8 V rail.
+	 * It also feeds the i2c11 pull-ups (TPS65132, RT8555): with it off the
+	 * bus reads "clock line undriveable", so it stays on.
+	 */
+	panel_iovcc: panel-iovcc-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "panel_iovcc";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		gpio = <&tlmm 6 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		/*
+		 * Electrically from the 1.8 V rail; VCI is listed instead so that
+		 * VCI comes up first (the bus test below needs both panel rails).
+		 */
+		vin-supply = <&vreg_l11c_3p2>;
+		/* 20 ms occasionally left TPS65132 returning EAGAIN at cold probe. */
+		startup-delay-us = <50000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	reserved-memory {
+		/*
+		 * ABL looks this node up by the exact path
+		 * /reserved-memory/splash_region to hand over the splash buffer.
+		 */
+		cont_splash_mem: splash_region@9c000000 {
+			reg = <0x0 0x9c000000 0x0 0x2300000>;
+			no-map;
+		};
+
+		dfps_data_mem: dfps-data@9e300000 {
+			reg = <0x0 0x9e300000 0x0 0x100000>;
+			no-map;
+		};
+
+		/* Huawei crash log and ABL boot-failure records. */
+		rainbow_mem: rainbow@b0000000 {
+			reg = <0x0 0xb0000000 0x0 0x400000>;
+			no-map;
+		};
+
+		bootfail_mem: bootfail@b0400000 {
+			reg = <0x0 0xb0400000 0x0 0x1000>;
+			no-map;
+		};
+	};
+};
+
+&apps_rsc {
+	regulators-0 {
+		compatible = "qcom,pm8150-rpmh-regulators";
+		qcom,pmic-id = "a";
+
+		vdd-s1-supply = <&vph_pwr>;
+		vdd-s2-supply = <&vph_pwr>;
+		vdd-s3-supply = <&vph_pwr>;
+		vdd-s4-supply = <&vph_pwr>;
+		vdd-s5-supply = <&vph_pwr>;
+		vdd-s6-supply = <&vph_pwr>;
+		vdd-s7-supply = <&vph_pwr>;
+		vdd-s8-supply = <&vph_pwr>;
+		vdd-s9-supply = <&vph_pwr>;
+		vdd-s10-supply = <&vph_pwr>;
+
+		vreg_s4a_1p8: smps4 {
+			regulator-name = "pm8150_s4";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_s5a_1p9: smps5 {
+			regulator-name = "pm8150_s5";
+			regulator-min-microvolt = <1900000>;
+			regulator-max-microvolt = <2040000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_s6a_0p95: smps6 {
+			regulator-name = "pm8150_s6";
+			regulator-min-microvolt = <950000>;
+			regulator-max-microvolt = <1128000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l18a_0p92: ldo18 {
+			regulator-name = "pm8150_l18";
+			regulator-min-microvolt = <800000>;
+			regulator-max-microvolt = <920000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l2a_3p1: ldo2 {
+			regulator-name = "pm8150_l2";
+			regulator-min-microvolt = <3072000>;
+			regulator-max-microvolt = <3072000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l5a_0p88: ldo5 {
+			regulator-name = "pm8150_l5";
+			regulator-min-microvolt = <880000>;
+			regulator-max-microvolt = <880000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l6a_1p2: ldo6 {
+			regulator-name = "pm8150_l6";
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l9a_1p2: ldo9 {
+			regulator-name = "pm8150_l9";
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l12a_1p8: ldo12 {
+			regulator-name = "pm8150_l12";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l17a_3p0: ldo17 {
+			regulator-name = "pm8150_l17";
+			regulator-min-microvolt = <2496000>;
+			regulator-max-microvolt = <3008000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+
+	regulators-1 {
+		compatible = "qcom,pm8150l-rpmh-regulators";
+		qcom,pmic-id = "c";
+
+		/* QCA6390 RFA 1.35 V (stock pm8150a_s8). */
+		vreg_s8c_1p35: smps8 {
+			regulator-name = "pm8150l_s8";
+			regulator-min-microvolt = <1350000>;
+			regulator-max-microvolt = <1400000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		/* microSD I/O and card power (stock pm8150a_l6 / pm8150a_l9). */
+		vreg_l6c_2p9: ldo6 {
+			regulator-name = "pm8150l_l6";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2960000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-allow-set-load;
+			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+						   RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		vreg_l9c_2p9: ldo9 {
+			regulator-name = "pm8150l_l9";
+			regulator-min-microvolt = <2704000>;
+			regulator-max-microvolt = <2960000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-allow-set-load;
+			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+						   RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		/* Panel VCI (stock "pm8150a_l11", 3.2 V). */
+		vreg_l11c_3p2: ldo11 {
+			regulator-name = "pm8150l_l11";
+			regulator-min-microvolt = <3200000>;
+			regulator-max-microvolt = <3200000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-always-on;
+		};
+
+		/* WCD938x mic bias supply (stock "pm8150a_bob"). */
+		vreg_bob: bob {
+			regulator-name = "pm8150l_bob";
+			regulator-min-microvolt = <3008000>;
+			regulator-max-microvolt = <3960000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_AUTO>;
+		};
+	};
+};
+
+&pm8150_gpios {
+	vol_up_n: vol-up-n-state {
+		pins = "gpio6";
+		function = "normal";
+		power-source = <1>;
+		input-enable;
+		bias-pull-up;
+	};
+};
+
+&pon {
+	mode-bootloader = <0x2>;
+	mode-recovery = <0x1>;
+};
+
+&pon_pwrkey {
+	status = "okay";
+};
+
+&pon_resin {
+	linux,code = <KEY_VOLUMEDOWN>;
+	status = "okay";
+};
+
+&pcie0 {
+	status = "okay";
+};
+
+&pcie0_phy {
+	vdda-phy-supply = <&vreg_l5a_0p88>;
+	vdda-pll-supply = <&vreg_l9a_1p2>;
+	status = "okay";
+};
+
+&pcieport0 {
+	wifi@0 {
+		compatible = "pci17cb,1101";
+		reg = <0x10000 0x0 0x0 0x0 0x0>;
+
+		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
+		vddaon-supply = <&vreg_pmu_aon_0p59>;
+		vddwlcx-supply = <&vreg_pmu_wlcx_0p8>;
+		vddwlmx-supply = <&vreg_pmu_wlmx_0p85>;
+		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
+		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
+		vddrfa1p7-supply = <&vreg_pmu_rfa_1p7>;
+		vddpcie0p9-supply = <&vreg_pmu_pcie_0p9>;
+		vddpcie1p8-supply = <&vreg_pmu_pcie_1p8>;
+	};
+};
+
+&uart6 {
+	status = "okay";
+
+	bluetooth {
+		compatible = "qcom,qca6390-bt";
+		/*
+		 * Each tablet's own address (HarmonyOS, /etc/matepad/bt-mac),
+		 * little-endian; without it the QCA6390 stays unconfigured.  The
+		 * installer (and build_probe_images.sh from device/bt-mac) writes
+		 * it into the DTB with set_bd_address.py; never a fixed one here.
+		 */
+		local-bd-address = [00 00 00 00 00 00];
+
+		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
+		vddaon-supply = <&vreg_pmu_aon_0p59>;
+		vddbtcmx-supply = <&vreg_pmu_btcmx_0p85>;
+		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
+		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
+		vddrfa1p7-supply = <&vreg_pmu_rfa_1p7>;
+	};
+};
+
+/* microSD slot: the Linux 7.0 root filesystem (ext4 label LINUX70ROOT). */
+&sdhc_2 {
+	cd-gpios = <&tlmm 77 GPIO_ACTIVE_HIGH>;
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&sdc2_default_state &sdc2_card_det_n>;
+	pinctrl-1 = <&sdc2_sleep_state &sdc2_card_det_n>;
+	vmmc-supply = <&vreg_l9c_2p9>;
+	vqmmc-supply = <&vreg_l6c_2p9>;
+	bus-width = <4>;
+	no-sdio;
+	no-mmc;
+	status = "okay";
+};
+
+&tlmm {
+	sdc2_default_state: sdc2-default-state {
+		clk-pins {
+			pins = "sdc2_clk";
+			drive-strength = <16>;
+			bias-disable;
+		};
+
+		cmd-pins {
+			pins = "sdc2_cmd";
+			drive-strength = <16>;
+			bias-pull-up;
+		};
+
+		data-pins {
+			pins = "sdc2_data";
+			drive-strength = <16>;
+			bias-pull-up;
+		};
+	};
+
+	bt_en_state: bt-default-state {
+		pins = "gpio21";
+		function = "gpio";
+		drive-strength = <16>;
+		output-low;
+		bias-pull-up;
+	};
+
+	wlan_en_state: wlan-default-state {
+		pins = "gpio20";
+		function = "gpio";
+		drive-strength = <16>;
+		output-low;
+		bias-pull-up;
+	};
+
+	qup_spi14_data_clk: qup-spi14-data-clk-state {
+		drive-strength = <6>;
+		bias-disable;
+	};
+
+	qup_spi14_cs: qup-spi14-cs-state {
+		drive-strength = <6>;
+		bias-disable;
+	};
+
+	ts_int_default: ts-int-default-state {
+		pins = "gpio39";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-up;
+	};
+
+	ts_reset_default: ts-reset-default-state {
+		pins = "gpio98";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
+	/*
+	 * Shared reset of the four speaker amps (stock hw_reset gpio_reset 109,
+	 * active high): held low = running.
+	 */
+	wcd938x_reset_default: wcd938x-reset-default-state {
+		pins = "gpio32";
+		function = "gpio";
+		drive-strength = <16>;
+		output-high;
+	};
+
+	speaker-amps-reset-hog {
+		gpio-hog;
+		gpios = <109 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "speaker-amps-reset";
+	};
+
+	sdc2_card_det_n: sd-card-det-n-state {
+		pins = "gpio77";
+		function = "gpio";
+		bias-pull-up;
+		drive-strength = <2>;
+	};
+};
+
+&ufs_mem_hc {
+	vcc-supply = <&vreg_l17a_3p0>;
+	vcc-max-microamp = <750000>;
+	vccq-supply = <&vreg_l6a_1p2>;
+	vccq-max-microamp = <750000>;
+	vccq2-supply = <&vreg_s4a_1p8>;
+	vccq2-max-microamp = <750000>;
+	status = "okay";
+};
+
+&ufs_mem_phy {
+	vdda-phy-supply = <&vreg_l5a_0p88>;
+	vdda-pll-supply = <&vreg_l9a_1p2>;
+	status = "okay";
+};
+
+&usb_1 {
+	status = "okay";
+};
+
+&usb_1_dwc3 {
+	dr_mode = "otg";
+	usb-role-switch;
+};
+
+&usb_1_hsphy {
+	vdda-pll-supply = <&vreg_l5a_0p88>;
+	vdda18-supply = <&vreg_l12a_1p8>;
+	vdda33-supply = <&vreg_l2a_3p1>;
+	status = "okay";
+};
+
+/*
+ * Touch: the Novatek touch part of the panel's display driver IC on SE14's
+ * SPI (native CS = GPIO 43), IRQ GPIO 39, reset GPIO 98 (stock huawei_thp@10
+ * and its novatech node).  touch/huawei-thp-lite.c serves aptouch_daemon.
+ */
+&qupv3_id_2 {
+	status = "okay";
+};
+
+&spi14 {
+	/* sm8250.dtsi muxes none of SE14's pins; without CS (GPIO 43) the
+	 * controller is never selected.  Stock: function qup14, 6 mA, no pull. */
+	pinctrl-names = "default";
+	pinctrl-0 = <&qup_spi14_data_clk>, <&qup_spi14_cs>;
+	status = "okay";
+
+	touchscreen@0 {
+		compatible = "huawei,dby-w09-thp";
+		reg = <0>;
+		spi-max-frequency = <16000000>;
+		interrupts-extended = <&tlmm 39 IRQ_TYPE_EDGE_FALLING>;
+		rst-gpios = <&tlmm 98 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ts_int_default>, <&ts_reset_default>;
+		huawei,chip-info = "W2599Z1100";
+		/* Touch and display are one IC: follow the panel's power. */
+		panel = <&display_panel>;
+		huawei,finger-magnification = <8>;
+		/* stock send_bt_status_to_fw: tell the firmware about the M-Pencil */
+		huawei,send-pen-status-to-fw;
+		touchscreen-size-x = <1600>;
+		touchscreen-size-y = <2560>;
+	};
+};
+
+/* UART6 (QCA6390 Bluetooth) is on the first QUP wrapper. */
+&qupv3_id_0 {
+	status = "okay";
+};
+
+&qupv3_id_1 {
+	status = "okay";
+};
+
+/*
+ * Sensor (SLPI) and audio (ADSP) DSPs with HarmonyOS's own firmware from the
+ * modem partition (image/slpi.*, image/adsp.*), copied to the microSD root.
+ * Their drivers are modules, so the firmware loads after the root mount.
+ */
+&slpi {
+	firmware-name = "qcom/sm8250/huawei/dby-w09/slpi.mdt";
+	status = "okay";
+};
+
+&adsp {
+	firmware-name = "qcom/sm8250/huawei/dby-w09/adsp.mdt";
+	status = "okay";
+};
+
+/*
+ * Speakers: four NXP TFA9874 smart amps on i2c3 (0x34-0x37, stock
+ * smartpakit nodes), audio on PRIMARY TDM (GPIO 138-141) with LPASS as the
+ * 6.144 MHz clock master, the stock qcom,msm-dai-tdm-pri-rx settings.
+ * Upstream has no TFA9874 driver: the amps are set up from userspace over
+ * i2c-dev (sound/matepad-tfa9874), the card's codec is a stub.
+ */
+&i2c3 {
+	clock-frequency = <400000>;
+	status = "okay";
+};
+
+&q6afedai {
+	dai@24 {
+		reg = <PRIMARY_TDM_RX_0>;
+		qcom,tdm-sync-mode = <2>;	/* long sync, one slot wide */
+		qcom,tdm-sync-src = <1>;	/* internal */
+		qcom,tdm-data-out = <0>;
+		qcom,tdm-invert-sync = <1>;
+		qcom,tdm-data-delay = <1>;
+		qcom,tdm-data-align = <0>;
+	};
+};
+
+&q6asmdai {
+	dai@0 {
+		reg = <MSM_FRONTEND_DAI_MULTIMEDIA1>;
+	};
+
+	dai@1 {
+		reg = <MSM_FRONTEND_DAI_MULTIMEDIA2>;
+	};
+
+	/* ASoC resolves these by child index: keep numeric order. */
+	dai@2 {
+		reg = <MSM_FRONTEND_DAI_MULTIMEDIA3>;
+	};
+};
+
+/* WCD938x: RX device (needed by the driver even without a headphone jack). */
+&rxmacro {
+	status = "okay";
+};
+
+&swr1 {
+	status = "okay";
+
+	wcd_rx: wcd9380-rx@0,4 {
+		compatible = "sdw20217010d00";
+		reg = <0 4>;
+		qcom,rx-port-mapping = <1 2 3 4 5>;
+	};
+};
+
+/* WCD938x: TX device (stock tx_swr_master wcd938x-tx-slave). */
+&txmacro {
+	status = "okay";
+};
+
+&swr2 {
+	status = "okay";
+
+	wcd_tx: wcd9380-tx@0,3 {
+		compatible = "sdw20217010d00";
+		reg = <0 3>;
+		qcom,tx-port-mapping = <2 3 4 5>;
+	};
+};
+
+&sound {
+	compatible = "qcom,sm8250-sndcard";
+	model = "Huawei-MatePad-11-DBY-W09";
+	pinctrl-0 = <&pri_mi2s_active>;
+	pinctrl-names = "default";
+	/* Mic biases as the stock machine driver's qcom,audio-routing. */
+	audio-routing =
+		"AMIC1", "MIC BIAS3",
+		"AMIC2", "MIC BIAS2",
+		"AMIC3", "MIC BIAS4",
+		"AMIC4", "MIC BIAS1",
+		"AMIC5", "MIC BIAS1",
+		"TX SWR_ADC0", "ADC1_OUTPUT",
+		"TX SWR_ADC1", "ADC2_OUTPUT",
+		"TX SWR_ADC2", "ADC3_OUTPUT",
+		"TX SWR_ADC3", "ADC4_OUTPUT";
+
+	mm1-dai-link {
+		link-name = "MultiMedia1";
+
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+		};
+	};
+
+	mm2-dai-link {
+		link-name = "MultiMedia2";
+
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+		};
+	};
+
+	mm3-dai-link {
+		link-name = "MultiMedia3";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+		};
+	};
+
+	displayport-dai-link {
+		link-name = "DisplayPort Playback";
+		cpu {
+			sound-dai = <&q6afedai DISPLAY_PORT_RX>;
+		};
+		platform {
+			sound-dai = <&q6routing>;
+		};
+		codec {
+			sound-dai = <&mdss_dp>;
+		};
+	};
+
+	speaker-dai-link {
+		link-name = "Speakers";
+
+		cpu {
+			sound-dai = <&q6afedai PRIMARY_TDM_RX_0>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			sound-dai = <&speaker_amps>;
+		};
+	};
+
+	mic-dai-link {
+		link-name = "WCD Capture";
+
+		cpu {
+			sound-dai = <&q6afedai TX_CODEC_DMA_TX_3>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			sound-dai = <&wcd938x 1>, <&swr2 0>, <&txmacro 0>;
+		};
+	};
+};
+
+&gmu {
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+};
+
+/* HarmonyOS /vendor/firmware/a650_zap.elf (Huawei-signed), see README. */
+&gpu_zap_shader {
+	firmware-name = "qcom/sm8250/huawei/dby-w09/a650_zap.mbn";
+};
+
+&i2c11 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	backlight: backlight@31 {
+		compatible = "richtek,rt8555";
+		reg = <0x31>;
+		enable-gpios = <&tlmm 10 GPIO_ACTIVE_HIGH>;
+	};
+
+	/* Panel bias, +-5.7 V as programmed by the stock kernel (0x11). */
+	lcd_bias: regulator@3e {
+		compatible = "ti,tps65132";
+		reg = <0x3e>;
+		/*
+		 * Really fed from VPH; panel_iovcc stands in so that this probe
+		 * waits until the bus pull-ups are powered.
+		 */
+		vin-supply = <&panel_iovcc>;
+
+		lcd_vsp: outp {
+			regulator-name = "lcd_vsp";
+			regulator-min-microvolt = <5700000>;
+			regulator-max-microvolt = <5700000>;
+			enable-gpios = <&tlmm 11 GPIO_ACTIVE_HIGH>;
+		};
+
+		lcd_vsn: outn {
+			regulator-name = "lcd_vsn";
+			regulator-min-microvolt = <5700000>;
+			regulator-max-microvolt = <5700000>;
+			enable-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};
+
+&mdss {
+	status = "okay";
+};
+
+&mdss_dsi0 {
+	vdda-supply = <&vreg_l9a_1p2>;
+	qcom,dual-dsi-mode;
+	qcom,sync-dual-dsi;
+	qcom,master-dsi;
+	status = "okay";
+
+	display_panel: panel@0 {
+		compatible = "huawei,dby-w09-panel";
+		reg = <0>;
+		vci-supply = <&vreg_l11c_3p2>;
+		vddio-supply = <&panel_iovcc>;
+		vsp-supply = <&lcd_vsp>;
+		vsn-supply = <&lcd_vsn>;
+		reset-gpios = <&tlmm 38 GPIO_ACTIVE_LOW>;
+		backlight = <&backlight>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				panel_in_0: endpoint {
+					remote-endpoint = <&mdss_dsi0_out>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+				panel_in_1: endpoint {
+					remote-endpoint = <&mdss_dsi1_out>;
+				};
+			};
+		};
+	};
+};
+
+&mdss_dsi0_out {
+	data-lanes = <0 1 2>;
+	remote-endpoint = <&panel_in_0>;
+};
+
+&mdss_dsi0_phy {
+	vdds-supply = <&vreg_l5a_0p88>;
+	phy-type = <PHY_TYPE_CPHY>;
+	status = "okay";
+};
+
+&mdss_dsi1 {
+	vdda-supply = <&vreg_l9a_1p2>;
+	qcom,dual-dsi-mode;
+	qcom,sync-dual-dsi;
+	/* DSI1 is the slave link: clock it from DSI0's PLL. */
+	assigned-clock-parents = <&mdss_dsi0_phy DSI_BYTE_PLL_CLK>,
+				 <&mdss_dsi0_phy DSI_PIXEL_PLL_CLK>;
+	status = "okay";
+};
+
+&mdss_dsi1_out {
+	data-lanes = <0 1 2>;
+	remote-endpoint = <&panel_in_1>;
+};
+
+&mdss_dsi1_phy {
+	vdds-supply = <&vreg_l5a_0p88>;
+	phy-type = <PHY_TYPE_CPHY>;
+	status = "okay";
+};
+#include "dby-w09-typec.dtsi"
+#include "dby-w09-power.dtsi"

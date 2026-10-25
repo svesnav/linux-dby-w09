@@ -1,0 +1,102 @@
+name: kernel
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Repository variable RUNNER = a self-hosted runner's label (kubuntu-dby-w09
+    # ci/runner); pull requests always build on GitHub's runners.
+    runs-on: ${{ (github.event_name != 'pull_request' && vars.RUNNER) || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    env:
+      MATEPAD_WORK_DIR: ${{ github.workspace }}/work
+      SOURCE_DIR: ${{ github.workspace }}/work/linux
+      OUTPUT_DIR: ${{ github.workspace }}/work/kbuild
+      BUSYBOX: ${{ github.workspace }}/work/build/busybox
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: linux-dby-w09
+
+      - name: Install the cross toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libc6-dev-arm64-cross bc bison flex libssl-dev \
+            device-tree-compiler cpio kmod python3 file ccache
+
+      # Self-hosted runners (kubuntu-dby-w09 ci/runner) keep /cache in a volume:
+      # ccache plus a local copy of the Linux git history. GitHub's runners
+      # keep ccache in the Actions cache.
+      - name: Set up the caches
+        run: |
+          if [ -d /cache ] && [ ! -w /cache ]; then sudo chown "$(id -u):$(id -g)" /cache; fi
+          if [ -d /cache ] && [ -w /cache ]; then
+            echo "CCACHE_DIR=/cache/ccache" >> "$GITHUB_ENV"
+            echo "LINUX_GIT=/cache/linux.git" >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+          fi
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v4
+        if: runner.environment == 'github-hosted'
+        with:
+          path: .ccache
+          key: ccache-${{ hashFiles('linux-dby-w09/KERNEL_VERSION') }}-${{ github.sha }}
+          restore-keys: ccache-${{ hashFiles('linux-dby-w09/KERNEL_VERSION') }}-
+
+      - name: Fetch Linux
+        run: |
+          mkdir -p work/build
+          v=$(cat linux-dby-w09/KERNEL_VERSION)
+          url=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+          if [ -n "${LINUX_GIT:-}" ]; then
+            [ -d "$LINUX_GIT" ] || git init -q --bare "$LINUX_GIT"
+            git -C "$LINUX_GIT" rev-parse -q --verify "refs/tags/$v" >/dev/null ||
+              git -C "$LINUX_GIT" fetch -q --depth 1 "$url" "refs/tags/$v:refs/tags/$v"
+            url=file://$LINUX_GIT
+          fi
+          git clone -q --depth 1 --branch "$v" "$url" "$SOURCE_DIR"
+          ccache -M 10G >/dev/null
+          ccache -z >/dev/null
+
+      - name: Configure and build the kernel
+        run: JOBS=$(nproc) bash linux-dby-w09/configure-and-build.sh
+
+      - name: Build the modules
+        run: |
+          JOBS=$(nproc) bash linux-dby-w09/build_modules.sh
+          ccache -s
+
+      - name: Pack the boot bundle
+        run: |
+          bash linux-dby-w09/fetch_busybox.sh "$BUSYBOX"
+          bash linux-dby-w09/build_release.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-boot
+          path: work/build/release/linux-boot-*.tar
+          retention-days: 14
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: linux-dby-w09
+        run: |
+          gh release create "$GITHUB_REF_NAME" ../work/build/release/linux-boot-*.tar \
+            --title "Linux $GITHUB_REF_NAME for the MatePad 11" \
+            --notes "Blob-free boot bundle (kernel, DTB, DTBO, SD-root initramfs, modules). Install it with the MatePad installer, which builds the boot partitions from the tablet's own stock ones."
