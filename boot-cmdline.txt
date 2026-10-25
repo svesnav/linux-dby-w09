@@ -1,0 +1,1 @@
+clk_ignore_unused pd_ignore_unused console=tty0 fbcon=font:TER16x32 loglevel=7 ignore_loglevel panic=0 rdinit=/init

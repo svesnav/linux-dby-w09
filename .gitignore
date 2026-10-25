@@ -1,0 +1,8 @@
+# build outputs and Python caches
+build/
+__pycache__/
+*.pyc
+*.ko
+*.img
+*.dtb
+*.dtbo

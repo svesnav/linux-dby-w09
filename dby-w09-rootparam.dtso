@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/dts-v1/;
+/plugin/;
+
+/*
+ * Minimal DBY-W09 board overlay.  Huawei's ABL rejects a DTBO entry that
+ * does not fill /rootparam the way the stock overlay 8 does (found by
+ * bisection); every other stock fragment targets vendor-only nodes.
+ */
+/ {
+	/*
+	 * ABL copies these root properties over the base DTB's, so they must
+	 * keep the upstream "qcom,sm8250" (msm-mdss looks its UBWC data up by
+	 * the machine compatible).
+	 */
+	model = "Huawei MatePad 11 (2021) DBY-W09";
+	compatible = "huawei,dby-w09", "qcom,sm8250";
+	qcom,board-id = <0x206a 0>;
+
+	fragment@0 {
+		target = <&rootparam>;
+		__overlay__ {
+			qcom,boardid = <0x08 0x02 0x09 0x08>;
+			qcom,board_name = "DBY_W09_VG";
+			qcom,product_name = "DBY-W09";
+			hardware_version = "SH1DBSLM";
+			huawei,modem_id = <0xffffffff 0x00>;
+		};
+	};
+};
