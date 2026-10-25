@@ -96,7 +96,26 @@ needs is built in; `configure-and-build.sh` fails if any of it is missing.
 | `ramdisk-payload.img` | header v0 image with the SD-root initramfs, laid over the `ramdisk` partition |
 | `cmdline.txt` | kernel command line |
 | `linux-modules.tar.gz` | `/usr/lib/modules/<release>` |
+| `linux-image-dby-w09_<version>_arm64.deb` | the same as a Debian package (also a separate release asset) |
 | `SHA256SUMS`, `release.txt` | checksums, kernel release string |
+
+## Updating a running Kubuntu
+
+Every release also carries `linux-image-dby-w09_<version>_arm64.deb`:
+
+```bash
+sudo apt install ./linux-image-dby-w09_*_arm64.deb
+sudo reboot
+```
+
+The package installs the modules and the boot files, then
+`matepad-kernel-install` builds the `boot`, `ramdisk` and `dtbo` partitions
+from the stock HarmonyOS images the installer saved
+(`/usr/local/share/matepad/harmonyos-images`) and this tablet's Bluetooth
+address, keeps the previous partitions in `/var/lib/matepad/boot-backup`,
+writes each one and reads it back. `matepad-kernel-install --check` shows
+what would change. In a chroot, a container or on another device the
+package only installs its files.
 
 ## CI
 
@@ -122,6 +141,7 @@ copy); pull requests always use GitHub's runners.
 | `build_modules.sh`, `build_release.sh`, `fetch_busybox.sh` | modules, blob-free bundle, initramfs busybox |
 | `sd_root_init.sh` | initramfs that boots the microSD root |
 | `set_bd_address.py` | writes a Bluetooth address into the DTB |
+| `build_deb.sh`, `deb/matepad-kernel-install` | the Debian package and its boot-partition installer |
 | `pack_dtbo.py` | packs the DTBO table |
 | `tools/mkbootimg.py` | AOSP mkbootimg (Apache-2.0) |
 | `build_dev_images.sh`, `repack_boot.py` | development: partition images for one tablet from its stock dumps (`backups/`) |

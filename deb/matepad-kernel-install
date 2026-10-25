@@ -1,0 +1,241 @@
+#!/usr/bin/python3
+"""matepad-kernel-install: put the installed kernel into the boot partitions.
+
+Builds the three partitions Huawei's bootloader reads from the files of the
+linux-image-dby-w09 package (/usr/lib/matepad/linux-boot) and this tablet's
+own data, as the installer app does on HarmonyOS:
+
+  boot     the stock HarmonyOS image (header v2, its ramdisk) with this kernel,
+           DTB (Bluetooth address from /etc/matepad/bt-mac) and command line
+  ramdisk  the SD-root initramfs laid over the stock partition (AVB footer kept)
+  dtbo     the /rootparam overlay table
+
+The stock images are the ones the installer saved for Restart to HarmonyOS
+(/usr/local/share/matepad/harmonyos-images, checked against SHA256SUMS).
+Each partition is backed up to /var/lib/matepad/boot-backup first, then
+written, synced and read back. Nothing is written unless every check passes.
+
+    matepad-kernel-install [--check] [--auto]
+
+--check   build and compare only, write nothing
+--auto    (package scripts) skip quietly where partitions must not be
+          touched: in a chroot or container, or not on a DBY-W09 running
+          from its microSD card
+"""
+import hashlib
+import os
+import re
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+BUNDLE = Path("/usr/lib/matepad/linux-boot")
+STOCK = Path("/usr/local/share/matepad/harmonyos-images")
+BT_MAC = Path("/etc/matepad/bt-mac")
+BACKUP = Path("/var/lib/matepad/boot-backup")
+PARTS = ("dtbo", "ramdisk", "boot")
+
+
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def read_sums(directory: Path) -> dict:
+    sums = {}
+    for line in (directory / "SHA256SUMS").read_text().splitlines():
+        if line.strip():
+            digest, name = line.split(None, 1)
+            sums[name.strip().lstrip("*")] = digest.lower()
+    return sums
+
+
+def checked(directory: Path, name: str, sums: dict) -> bytes:
+    data = (directory / name).read_bytes()
+    if sums.get(name) != sha256(data):
+        raise SystemExit(f"{directory / name}: SHA-256 mismatch")
+    return data
+
+
+# ---- Android boot image, header v2 (as AOSP mkbootimg writes it)
+
+def boot_with(stock: bytes, kernel: bytes, dtb: bytes, cmdline: str) -> bytes:
+    if stock[:8] != b"ANDROID!":
+        raise SystemExit("stock boot partition holds no Android boot image")
+    (kernel_size, kernel_addr, ramdisk_size, ramdisk_addr, second_size, second_addr,
+     tags_addr, page, version, os_version) = struct.unpack_from("<10I", stock, 8)
+    if version != 2:
+        raise SystemExit(f"stock boot image header v{version}, expected v2")
+    name = stock[48:64]
+    recovery_size, recovery_offset, _ = struct.unpack_from("<IQI", stock, 1632)
+    _, dtb_addr = struct.unpack_from("<IQ", stock, 1648)
+    up = lambda n: (n + page - 1) // page * page  # noqa: E731
+    pos = page + up(kernel_size)
+    ramdisk = stock[pos:pos + ramdisk_size]
+    pos += up(ramdisk_size)
+    second = stock[pos:pos + second_size]
+    pos += up(second_size)
+    recovery = stock[pos:pos + recovery_size]
+
+    cmd = cmdline.encode()
+    if len(cmd) > 512 + 1024 - 1:
+        raise SystemExit("command line too long")
+    sha = hashlib.sha1()
+    for part in (kernel, ramdisk, second, recovery, dtb):
+        sha.update(part)
+        sha.update(struct.pack("<I", len(part)))
+    header = b"ANDROID!" + struct.pack(
+        "<10I", len(kernel), kernel_addr, len(ramdisk), ramdisk_addr if ramdisk else 0,
+        len(second), second_addr if second else 0, tags_addr, page, version, os_version)
+    header += name + cmd[:512].ljust(512, b"\0") + sha.digest().ljust(32, b"\0")
+    header += cmd[512:].ljust(1024, b"\0")
+    header += struct.pack("<IQI", len(recovery), recovery_offset if recovery else 0, 1660)
+    header += struct.pack("<IQ", len(dtb), dtb_addr)
+    image = header.ljust(page, b"\0")
+    for part in (kernel, ramdisk, second, recovery, dtb):
+        image += part.ljust(up(len(part)), b"\0")
+    return image
+
+
+# ---- DTB: local-bd-address
+
+def set_bd_address(dtb: bytes, address: str) -> bytes:
+    if not re.fullmatch(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", address):
+        raise SystemExit(f"{BT_MAC}: not a Bluetooth address: {address!r}")
+    magic, _, off_struct, off_strings, *_ = struct.unpack_from(">10I", dtb)
+    size_struct = struct.unpack_from(">I", dtb, 36)[0]
+    if magic != 0xD00DFEED:
+        raise SystemExit("not a flattened device tree")
+    found, pos, end = [], off_struct, off_struct + size_struct
+    while pos < end:
+        (token,) = struct.unpack_from(">I", dtb, pos)
+        pos += 4
+        if token == 1:  # begin node
+            pos = (dtb.index(b"\0", pos) + 4) & ~3
+        elif token == 3:  # property
+            length, name_off = struct.unpack_from(">II", dtb, pos)
+            pos += 8
+            name = dtb[off_strings + name_off:dtb.index(b"\0", off_strings + name_off)]
+            if name == b"local-bd-address" and length == 6:
+                found.append(pos)
+            pos = (pos + length + 3) & ~3
+        elif token == 9:
+            break
+    if len(found) != 1:
+        raise SystemExit(f"expected one local-bd-address in the DTB, found {len(found)}")
+    value = bytes(reversed(bytes.fromhex(address.replace(":", ""))))
+    return dtb[:found[0]] + value + dtb[found[0] + 6:]
+
+
+# ---- ramdisk partition: payload over the stock one, AVB footer kept
+
+def ramdisk_with(stock: bytes, payload: bytes) -> bytes:
+    if stock[-64:-60] != b"AVBf":
+        raise SystemExit("stock ramdisk partition has no AVB footer")
+    size = struct.unpack_from(">Q", stock, len(stock) - 52)[0]
+    if not 0 < len(payload) <= size <= len(stock) - 64:
+        raise SystemExit(f"ramdisk payload of {len(payload)} bytes does not fit {size}")
+    return payload + bytes(size - len(payload)) + stock[size:]
+
+
+# ---- partitions
+
+def device(part: str) -> Path:
+    return Path(f"/dev/disk/by-partlabel/{part}").resolve()
+
+
+def blockdev_size(path: Path) -> int:
+    return int(subprocess.check_output(["blockdev", "--getsize64", str(path)]))
+
+
+def unsafe_reason():
+    try:
+        if subprocess.run(["systemd-detect-virt", "-q", "-r"]).returncode == 0:
+            return "running in a chroot"
+        if subprocess.run(["systemd-detect-virt", "-q", "-c"]).returncode == 0:
+            return "running in a container"
+    except FileNotFoundError:
+        pass
+    model = Path("/proc/device-tree/model")
+    if not model.exists() or b"DBY-W09" not in model.read_bytes():
+        return "not a Huawei MatePad 11 (DBY-W09)"
+    root = subprocess.run(["findmnt", "-n", "-o", "SOURCE", "/"],
+                          capture_output=True, text=True).stdout.strip()
+    if not root.startswith("/dev/mmcblk"):
+        return f"the root file system is {root or 'unknown'}, not the microSD card"
+    return None
+
+
+def main(argv) -> None:
+    check_only = "--check" in argv
+    auto = "--auto" in argv
+    reason = unsafe_reason()
+    if reason:
+        if auto:
+            print(f"matepad-kernel-install: {reason}; boot partitions left alone")
+            return
+        raise SystemExit(f"matepad-kernel-install: {reason}")
+    if os.geteuid() != 0:
+        raise SystemExit("run as root")
+    if not (STOCK / "SHA256SUMS").exists():
+        raise SystemExit(f"no stock HarmonyOS images in {STOCK} (saved by the installer app)")
+
+    bundle_sums = read_sums(BUNDLE)
+    stock_sums = read_sums(STOCK)
+    dtb = checked(BUNDLE, "sm8250-huawei-dby-w09.dtb", bundle_sums)
+    if BT_MAC.exists():
+        dtb = set_bd_address(dtb, BT_MAC.read_text().strip())
+    else:
+        print(f"warning: no {BT_MAC}, Bluetooth will stay unconfigured")
+    release = checked(BUNDLE, "release.txt", bundle_sums).decode().strip()
+    images = {
+        "dtbo": checked(BUNDLE, "dtbo.img", bundle_sums),
+        "ramdisk": ramdisk_with(checked(STOCK, "ramdisk.img", stock_sums),
+                                checked(BUNDLE, "ramdisk-payload.img", bundle_sums)),
+        "boot": boot_with(checked(STOCK, "boot.img", stock_sums),
+                          checked(BUNDLE, "Image.gz", bundle_sums), dtb,
+                          checked(BUNDLE, "cmdline.txt", bundle_sums).decode().strip()),
+    }
+    if not Path(f"/usr/lib/modules/{release}/modules.dep").exists():
+        raise SystemExit(f"modules for {release} are not installed")
+
+    jobs = []
+    for part in PARTS:
+        target, image = device(part), images[part]
+        size = blockdev_size(target)
+        if not 0 < len(image) <= size:
+            raise SystemExit(f"{part}: image of {len(image)} bytes does not fit {size}")
+        with target.open("rb") as dev:
+            current = dev.read(len(image))
+        if current == image:
+            print(f"{part}: already up to date")
+        else:
+            jobs.append((part, target, image, size))
+    if not jobs:
+        print(f"Linux {release} is in the boot partitions")
+        return
+    if check_only:
+        print("would write: " + ", ".join(part for part, *_ in jobs))
+        return
+
+    BACKUP.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for part, target, image, size in jobs:
+        with target.open("rb") as dev:
+            (BACKUP / f"{part}.img").write_bytes(dev.read(size))
+    (BACKUP / "when").write_text(time.strftime("%Y-%m-%d %H:%M:%S UTC\n", time.gmtime()))
+    print(f"previous partitions saved in {BACKUP}")
+    for part, target, image, size in jobs:
+        with target.open("r+b", buffering=0) as dev:
+            dev.write(image)
+            os.fsync(dev.fileno())
+            dev.seek(0)
+            if sha256(dev.read(len(image))) != sha256(image):
+                raise SystemExit(f"{part}: readback mismatch; restore it from {BACKUP / (part + '.img')}")
+        print(f"{part}: written and verified")
+    os.sync()
+    print(f"Linux {release} is installed; it starts with the next reboot")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
