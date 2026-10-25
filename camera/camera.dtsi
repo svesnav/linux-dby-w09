@@ -6,7 +6,8 @@
  *          MCLK0 (gpio94), reset gpio93, AVDD gpio26, DVDD gpio49 behind
  *          the DVDD switch gpio48;
  *   front: Hynix Hi-846 (id 0x4608), CCI1 bus 0 at 0x21, CSIPHY2,
- *          MCLK2 (gpio96), reset gpio78, AVDD gpio26, DVDD gpio153.
+ *          MCLK2 (gpio96), reset gpio78, AVDD gpio26, DVDD gpio153; run on
+ *          2 lanes, which carry the driver's largest mode (1632x1224 30 fps).
  * Both take I/O (1.8 V) from pm8150l L5; the 2.8 V AVDD switch is shared.
  * The stock HAL clocks both at 24 MHz; the mainline OV13B10 driver has
  * register tables for 19.2 MHz only.
@@ -119,7 +120,7 @@
 		port@2 {
 			csiphy2_ep: endpoint {
 				clock-lanes = <7>;
-				data-lanes = <0 1 2 3>;
+				data-lanes = <0 1>;
 				remote-endpoint = <&hi846_ep>;
 			};
 		};
@@ -195,7 +196,7 @@
 		port {
 			hi846_ep: endpoint {
 				link-frequencies = /bits/ 64 <80000000 200000000>;
-				data-lanes = <1 2 3 4>;
+				data-lanes = <1 2>;
 				remote-endpoint = <&csiphy2_ep>;
 			};
 		};
