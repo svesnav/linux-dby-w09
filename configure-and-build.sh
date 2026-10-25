@@ -36,6 +36,8 @@ python3 "$repo_dir/sound/q6afe-dp-stream.py" "$source_dir"
 python3 "$repo_dir/usb/vg27a-native-modes.py" "$source_dir"
 # Rear camera sensor from the device tree, with all three rails.
 python3 "$repo_dir/camera/ov13b10-of.py" "$source_dir"
+# Front camera sensor: mode changes on its 4-lane link.
+python3 "$repo_dir/camera/hi846-4lane-modes.py" "$source_dir"
 # TDM group device setup in q6afe (snd-q6afe.ko), as the downstream driver.
 python3 "$repo_dir/sound/q6afe-tdm-group.py" "$source_dir"
 # TDM invert-sync/data-delay/data-out from the DT actually reach the DSP.
