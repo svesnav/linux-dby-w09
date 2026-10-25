@@ -76,9 +76,11 @@ REGULATOR_QCOM_USB_VBUS DRM_MSM_DP
     SPI SPI_QCOM_GENI TOUCHSCREEN_HUAWEI_THP_LITE
     ANDROID_BINDER_IPC ANDROID_BINDERFS UHID HIDRAW INPUT_UINPUT
     FW_LOADER_COMPRESS FW_LOADER_COMPRESS_ZSTD FW_LOADER_COMPRESS_XZ
+    DMABUF_HEAPS DMABUF_HEAPS_SYSTEM DMABUF_HEAPS_CMA UDMABUF
 )
 # Ubuntu's linux-firmware is zstd-compressed (GPU, Wi-Fi, Bluetooth): the
 # FW_LOADER_COMPRESS* entries above let the kernel read it.
+# DMA-buf heaps and udmabuf: buffers for libcamera's software ISP (cameras).
 # Wi-Fi requests its firmware at probe time, before the microSD root is
 # mounted, and Bluetooth/PCI power control can only be modules here: all of
 # the QCA6390 stack is installed on the card by build_modules.sh.
