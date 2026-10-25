@@ -9,6 +9,9 @@
  *          MCLK2 (gpio96), reset gpio78, AVDD gpio26, DVDD gpio153; run on
  *          2 lanes, which carry the driver's largest mode (1632x1224 30 fps).
  * Both take I/O (1.8 V) from pm8150l L5; the 2.8 V AVDD switch is shared.
+ * Rear autofocus: Dongwoon DW9714 voice-coil driver (stock "dw9714v") on
+ * the sensor's CCI0 bus at 0x0c, VDD from pm8150l L7 (2.856 V), enabled by
+ * gpio154 (stock CAM_AFVDD).
  * The stock HAL clocks both at 24 MHz; the mainline OV13B10 driver has
  * register tables for 19.2 MHz only.
  */
@@ -62,6 +65,14 @@
 			regulator-name = "pm8150l_l5";
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		/* Rear autofocus VCM (stock "pm8150a_l7", cam_vaf). */
+		vreg_l7c_2p85: ldo7 {
+			regulator-name = "pm8150l_l7";
+			regulator-min-microvolt = <2856000>;
+			regulator-max-microvolt = <2856000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
 	};
@@ -154,6 +165,7 @@
 
 		rotation = <90>;
 		orientation = <1>;	/* back */
+		lens-focus = <&rear_vcm>;
 
 		port {
 			ov13b10_ep: endpoint {
@@ -162,6 +174,13 @@
 				remote-endpoint = <&csiphy0_ep>;
 			};
 		};
+	};
+
+	rear_vcm: lens@c {
+		compatible = "dongwoon,dw9714";
+		reg = <0x0c>;
+		vcc-supply = <&vreg_l7c_2p85>;
+		powerdown-gpios = <&tlmm 154 GPIO_ACTIVE_LOW>;
 	};
 };
 

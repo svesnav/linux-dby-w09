@@ -97,7 +97,8 @@ extra_modules=(EXFAT_FS NTFS3_FS USB_UAS)
 # Rear camera flash LED (PM8150L), used as the flashlight.
 extra_modules+=(LEDS_QCOM_FLASH)
 # Cameras: camera clocks, CCI (sensor I2C), CAMSS and the two sensors.
-extra_modules+=(SM_CAMCC_8250 I2C_QCOM_CCI VIDEO_QCOM_CAMSS VIDEO_OV13B10 VIDEO_HI846)
+extra_modules+=(SM_CAMCC_8250 I2C_QCOM_CCI VIDEO_QCOM_CAMSS VIDEO_OV13B10 VIDEO_HI846
+    VIDEO_DW9714)
 # defconfig targets every arm64 board. Only Qualcomm stays: switching off the
 # other SoC platforms drops their drivers too; the rest are PCIe, server and
 # network drivers this tablet has no hardware for (about 1300 -> 800 modules).
