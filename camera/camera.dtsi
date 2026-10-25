@@ -1,0 +1,203 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Cameras, from the stock device tree (qcom,cam-sensor0/1) and the sensor
+ * IDs the stock camera HAL probes:
+ *   rear:  OmniVision OV13B10 (id 0x560d42), CCI0 bus 0 at 0x36, CSIPHY0,
+ *          MCLK0 (gpio94), reset gpio93, AVDD gpio26, DVDD gpio49 behind
+ *          the DVDD switch gpio48;
+ *   front: Hynix Hi-846 (id 0x4608), CCI1 bus 0 at 0x21, CSIPHY2,
+ *          MCLK2 (gpio96), reset gpio78, AVDD gpio26, DVDD gpio153.
+ * Both take I/O (1.8 V) from pm8150l L5; the 2.8 V AVDD switch is shared.
+ * The stock HAL clocks both at 24 MHz; the mainline OV13B10 driver has
+ * register tables for 19.2 MHz only.
+ */
+
+/ {
+	vreg_cam_avdd_2p8: regulator-cam-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_avdd_2p8";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		gpio = <&tlmm 26 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&vph_pwr>;
+	};
+
+	vreg_cam_dvdd_sw: regulator-cam-dvdd-sw {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_dvdd_sw";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		gpio = <&tlmm 48 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&vph_pwr>;
+	};
+
+	vreg_cam_rear_dvdd: regulator-cam-rear-dvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_rear_dvdd";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		gpio = <&tlmm 49 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&vreg_cam_dvdd_sw>;
+	};
+
+	vreg_cam_front_dvdd: regulator-cam-front-dvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_front_dvdd";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		gpio = <&tlmm 153 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&vph_pwr>;
+	};
+};
+
+&apps_rsc {
+	regulators-1 {
+		/* Camera sensor I/O (stock "pm8150a_l5", cam_vio). */
+		vreg_l5c_1p8: ldo5 {
+			regulator-name = "pm8150l_l5";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+};
+
+&tlmm {
+	cam0_default: cam0-default-state {
+		rst-pins {
+			pins = "gpio93";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		mclk-pins {
+			pins = "gpio94";
+			function = "cam_mclk";
+			drive-strength = <16>;
+			bias-disable;
+		};
+	};
+
+	cam0_suspend: cam0-suspend-state {
+		rst-pins {
+			pins = "gpio93";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-down;
+			output-low;
+		};
+
+		mclk-pins {
+			pins = "gpio94";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&camss {
+	vdda-phy-supply = <&vreg_l5a_0p88>;
+	vdda-pll-supply = <&vreg_l9a_1p2>;
+	status = "okay";
+
+	ports {
+		/* The port index is the CSIPHY. */
+		port@0 {
+			csiphy0_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
+				remote-endpoint = <&ov13b10_ep>;
+			};
+		};
+
+		port@2 {
+			csiphy2_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
+				remote-endpoint = <&hi846_ep>;
+			};
+		};
+	};
+};
+
+&cci0 {
+	status = "okay";
+};
+
+&cci0_i2c0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	camera@36 {
+		compatible = "ovti,ov13b10";
+		reg = <0x36>;
+
+		reset-gpios = <&tlmm 93 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default", "suspend";
+		pinctrl-0 = <&cam0_default>;
+		pinctrl-1 = <&cam0_suspend>;
+
+		clocks = <&camcc CAM_CC_MCLK0_CLK>;
+		assigned-clocks = <&camcc CAM_CC_MCLK0_CLK>;
+		assigned-clock-rates = <19200000>;
+
+		dovdd-supply = <&vreg_l5c_1p8>;
+		avdd-supply = <&vreg_cam_avdd_2p8>;
+		dvdd-supply = <&vreg_cam_rear_dvdd>;
+
+		rotation = <90>;
+		orientation = <1>;	/* back */
+
+		port {
+			ov13b10_ep: endpoint {
+				link-frequencies = /bits/ 64 <560000000>;
+				data-lanes = <1 2 3 4>;
+				remote-endpoint = <&csiphy0_ep>;
+			};
+		};
+	};
+};
+
+&cci1 {
+	status = "okay";
+};
+
+&cci1_i2c0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	camera@21 {
+		compatible = "hynix,hi846";
+		reg = <0x21>;
+
+		reset-gpios = <&tlmm 78 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default", "suspend";
+		pinctrl-0 = <&cam2_default>;
+		pinctrl-1 = <&cam2_suspend>;
+
+		clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		assigned-clock-rates = <24000000>;
+
+		vddio-supply = <&vreg_l5c_1p8>;
+		vdda-supply = <&vreg_cam_avdd_2p8>;
+		vddd-supply = <&vreg_cam_front_dvdd>;
+
+		rotation = <270>;
+		orientation = <0>;	/* front */
+
+		port {
+			hi846_ep: endpoint {
+				link-frequencies = /bits/ 64 <80000000 200000000>;
+				data-lanes = <1 2 3 4>;
+				remote-endpoint = <&csiphy2_ep>;
+			};
+		};
+	};
+};

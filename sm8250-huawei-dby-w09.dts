@@ -937,3 +937,4 @@
 };
 #include "dby-w09-typec.dtsi"
 #include "dby-w09-power.dtsi"
+#include "dby-w09-camera.dtsi"
