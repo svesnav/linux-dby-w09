@@ -35,3 +35,17 @@
 		default-state = "off";
 	};
 };
+
+/* Rear camera flash: one white LED on channel 1 of the PM8150L flash block
+ * (stock: torch_0/flash_0 behind switch_0, 300 mA torch, 1 A flash, 1.28 s). */
+&pm8150l_flash {
+	status = "okay";
+	led-0 {
+		function = LED_FUNCTION_FLASH;
+		color = <LED_COLOR_ID_WHITE>;
+		led-sources = <1>;
+		led-max-microamp = <300000>;
+		flash-max-microamp = <1000000>;
+		flash-max-timeout-us = <1280000>;
+	};
+};
