@@ -80,15 +80,22 @@ jobs:
           JOBS=$(nproc) bash linux-dby-w09/build_modules.sh
           ccache -s
 
-      - name: Pack the boot bundle
+      - name: Pack the boot bundle and the Debian package
         run: |
+          # Package version: 7.0.14-1 for tag v7.0.14-1, otherwise 7.0.14~ci<run>
+          case "$GITHUB_REF" in
+            refs/tags/v*) export DEB_VERSION="${GITHUB_REF_NAME#v}" ;;
+            *) export DEB_VERSION="$(sed 's/^v//' linux-dby-w09/KERNEL_VERSION)~ci${{ github.run_number }}" ;;
+          esac
           bash linux-dby-w09/fetch_busybox.sh "$BUSYBOX"
           bash linux-dby-w09/build_release.sh
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-boot
-          path: work/build/release/linux-boot-*.tar
+          path: |
+            work/build/release/linux-boot-*.tar
+            work/build/release/linux-image-dby-w09_*.deb
           retention-days: 14
 
       - name: Publish the release
@@ -97,6 +104,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         working-directory: linux-dby-w09
         run: |
+          cat > ../notes.md <<'EOF'
+          **Update a running Kubuntu:** download the `.deb`, run
+          `sudo apt install ./linux-image-dby-w09_*.deb` and reboot. It writes the
+          boot partitions from the stock HarmonyOS images the installer saved, with
+          backups and readback checks.
+
+          The `.tar` is the blob-free boot bundle the image build and the installer
+          app use (kernel, DTB, DTBO, SD-root initramfs, modules).
+          EOF
           gh release create "$GITHUB_REF_NAME" ../work/build/release/linux-boot-*.tar \
-            --title "Linux $GITHUB_REF_NAME for the MatePad 11" \
-            --notes "Blob-free boot bundle (kernel, DTB, DTBO, SD-root initramfs, modules). Install it with the MatePad installer, which builds the boot partitions from the tablet's own stock ones."
+            ../work/build/release/linux-image-dby-w09_*.deb \
+            --title "Linux $GITHUB_REF_NAME for the MatePad 11" --notes-file ../notes.md

@@ -9,7 +9,7 @@ project_dir="${MATEPAD_WORK_DIR:-$(cd "$repo_dir/.." && pwd)}"
 source_dir="${SOURCE_DIR:-$HOME/matepad-linux-7.0}"
 output_dir="${OUTPUT_DIR:-$HOME/matepad-linux-7.0-build}"
 board_dts="$source_dir/arch/arm64/boot/dts/qcom/sm8250-huawei-dby-w09.dts"
-make_args=(-C "$source_dir" O="$output_dir" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-)
+make_args=(-C "$source_dir" O="$output_dir" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION=)
 # With CCACHE_DIR set (CI keeps it between builds), compile through ccache;
 # both scripts must agree, or the second sees a changed compiler.
 if [ -n "${CCACHE_DIR:-}" ] && command -v ccache >/dev/null; then
@@ -107,7 +107,7 @@ for symbol in "${builtin[@]}"; do args+=(-e "$symbol"); done
 for symbol in "${modules[@]}" "${extra_modules[@]}"; do args+=(-m "$symbol"); done
 for symbol in "${module_options[@]}"; do args+=(-e "$symbol"); done
 "$source_dir/scripts/config" --file "$output_dir/.config" --keep-case "${args[@]}" \
-    --set-str LOCALVERSION "-dby-w09"
+    --set-str LOCALVERSION "-dby-w09" -d LOCALVERSION_AUTO
 make "${make_args[@]}" olddefconfig
 
 missing=0

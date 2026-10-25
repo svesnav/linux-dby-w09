@@ -10,6 +10,7 @@ set -euo pipefail
 #     ramdisk-payload.img                   header v0 image, SD-root initramfs
 #     cmdline.txt                           kernel command line
 #     linux-modules.tar.gz                  /usr/lib/modules/<release>
+#     linux-image-dby-w09_<version>_arm64.deb  the same as a Debian package (build_deb.sh)
 #     SHA256SUMS
 #
 # No Huawei file goes in: on the tablet the installer builds the boot
@@ -54,8 +55,11 @@ python3 "$repo_dir/pack_dtbo.py" "$kbuild/dby-w09-board.dtbo" "$dir/dtbo.img"
 cp "$repo_dir/boot-cmdline.txt" "$dir/cmdline.txt"
 cp "$modules" "$dir/linux-modules.tar.gz"
 echo "$release" > "$dir/release.txt"
+rm -f "$out"/linux-image-dby-w09_*.deb
+bash "$repo_dir/build_deb.sh" "$dir" "$out"
+cp "$out"/linux-image-dby-w09_*.deb "$dir/"    # the image build installs it
 (cd "$dir" && sha256sum Image.gz sm8250-huawei-dby-w09.dtb dtbo.img ramdisk-payload.img \
-    cmdline.txt linux-modules.tar.gz release.txt > SHA256SUMS)
+    cmdline.txt linux-modules.tar.gz release.txt linux-image-dby-w09_*.deb > SHA256SUMS)
 tar -C "$out" -cf "$out/linux-boot-$release.tar" "linux-boot-$release"
 ls -l "$out/linux-boot-$release.tar"
 cat "$dir/SHA256SUMS"
