@@ -111,6 +111,29 @@
 	};
 
 	/*
+	 * Keyboard folio: a second hall sensor (stock huawei,hall_1, gpio121)
+	 * sees the magnet only while the tablet stands in the keyboard's dock.
+	 * Reported as the tablet-mode switch (on while not docked), which KWin
+	 * uses for tablet mode; a separate device, as matepad-volkeys grabs the
+	 * cover's.
+	 */
+	keyboard-dock-sensor {
+		compatible = "gpio-keys";
+		label = "matepad-keyboard-dock";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&hall_keyboard_default>;
+
+		switch-tablet-mode {
+			label = "hall-keyboard";
+			gpios = <&tlmm 121 GPIO_ACTIVE_HIGH>;
+			linux,input-type = <EV_SW>;
+			linux,code = <SW_TABLET_MODE>;
+			debounce-interval = <50>;
+		};
+	};
+
+	/*
 	 * QCA6390 Wi-Fi/BT: stock cnss-qca6390 uses WLAN_EN on GPIO 20, BT_EN on
 	 * GPIO 21, and pm8150 s6 (0.95 V), s4 (1.8 V), s5 (1.9 V), pm8150l s8
 	 * (1.35 V) -- the same as the Xiaomi Pad 5 Pro, whose node this follows.
@@ -515,6 +538,13 @@
 &tlmm {
 	hall_cover_default: hall-cover-default-state {
 		pins = "gpio113";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+
+	hall_keyboard_default: hall-keyboard-default-state {
+		pins = "gpio121";
 		function = "gpio";
 		drive-strength = <2>;
 		bias-pull-up;
