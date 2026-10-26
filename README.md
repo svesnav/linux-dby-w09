@@ -22,7 +22,7 @@ app that installs both lives in
 | Speakers (4× TFA9874) | work | primary TDM back end, q6afe/q6routing patches |
 | Microphones (WCD938x) | work | SoundWire, MultiMedia2 capture |
 | Sensors, auto-rotation | work | SLPI over QRTR, served by hexagonrpcd |
-| Volume/power keys, cover | work | |
+| Volume/power keys, cover, keyboard folio | work | hall sensors: cover on gpio113 (lid switch), folio dock on gpio121 (tablet-mode switch) |
 | USB-C host, DP Alt Mode, HDMI audio | work | `usb/README.md` |
 | Battery, charging LED | work | `power/matepad-fg.c`, `power/README.md` |
 | Flashlight (rear flash LED) | works | PM8150L flash block, `white:flash` (torch mode) |
