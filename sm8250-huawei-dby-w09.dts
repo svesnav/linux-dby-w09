@@ -88,6 +88,29 @@
 	};
 
 	/*
+	 * Magnetic cover: AK8789 hall sensor (stock huawei,hall_0) on gpio113,
+	 * pulled low while the cover lies on the screen; VDD from pm8150l L8.
+	 * matepad-volkeys (kubuntu-dby-w09) grabs this switch and turns it into
+	 * the power key (screen off) and a wake-up key, as on HarmonyOS.
+	 */
+	cover-sensor {
+		compatible = "gpio-keys";
+		label = "matepad-cover";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&hall_cover_default>;
+
+		switch-cover {
+			label = "hall-cover";
+			gpios = <&tlmm 113 GPIO_ACTIVE_LOW>;
+			linux,input-type = <EV_SW>;
+			linux,code = <SW_LID>;
+			debounce-interval = <20>;
+			wakeup-source;
+		};
+	};
+
+	/*
 	 * QCA6390 Wi-Fi/BT: stock cnss-qca6390 uses WLAN_EN on GPIO 20, BT_EN on
 	 * GPIO 21, and pm8150 s6 (0.95 V), s4 (1.8 V), s5 (1.9 V), pm8150l s8
 	 * (1.35 V) -- the same as the Xiaomi Pad 5 Pro, whose node this follows.
@@ -374,6 +397,15 @@
 						   RPMH_REGULATOR_MODE_HPM>;
 		};
 
+		/* Hall sensors (cover, keyboard, pen; stock "pm8150a_l8"). */
+		vreg_l8c_1p8: ldo8 {
+			regulator-name = "pm8150l_l8";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-always-on;
+		};
+
 		/* Panel VCI (stock "pm8150a_l11", 3.2 V). */
 		vreg_l11c_3p2: ldo11 {
 			regulator-name = "pm8150l_l11";
@@ -481,6 +513,13 @@
 };
 
 &tlmm {
+	hall_cover_default: hall-cover-default-state {
+		pins = "gpio113";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+
 	sdc2_default_state: sdc2-default-state {
 		clk-pins {
 			pins = "sdc2_clk";
