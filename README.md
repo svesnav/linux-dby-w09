@@ -27,7 +27,7 @@ app that installs both lives in
 | Battery, charging LED | work | `power/matepad-fg.c`, `power/README.md` |
 | Flashlight (rear flash LED) | works | PM8150L flash block, `white:flash` (torch mode) |
 | Suspend | works | Sleep button suspends; cover/power key blank the screen |
-| Cameras | not supported | rear OV13B10 and front Hi-846 have mainline drivers; CAMSS wiring not done |
+| Cameras | work | rear OV13B10 with DW9714 autofocus lens, front Hi-846; CAMSS raw capture, libcamera software ISP (`camera/`) |
 | RTC | not supported | time comes from NTP |
 
 ## Boot flow
@@ -138,6 +138,7 @@ copy); pull requests always use GitHub's runners.
 | `power/` | fuel gauge driver, PMIC/charger device tree, `README.md` |
 | `sound/` | patch scripts: primary TDM, TDM group/control, S32 COPPs, DP stream |
 | `usb/` | Type-C/DP device tree, monitor mode patch, `README.md` |
+| `camera/` | camera device tree (OV13B10 + DW9714 lens on CCI0/CSIPHY0, Hi-846 on CCI1/CSIPHY2, rails, MCLKs), OV13B10 OF/supplies patch, Hi-846 streaming fixes |
 | `configure-and-build.sh` | applies everything to a kernel tree, configures, builds |
 | `build_modules.sh`, `build_release.sh`, `fetch_busybox.sh` | modules, blob-free bundle, initramfs busybox |
 | `sd_root_init.sh` | initramfs that boots the microSD root |
