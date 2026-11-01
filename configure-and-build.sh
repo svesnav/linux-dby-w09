@@ -38,6 +38,8 @@ python3 "$repo_dir/usb/vg27a-native-modes.py" "$source_dir"
 python3 "$repo_dir/camera/ov13b10-of.py" "$source_dir"
 # Front camera sensor: streaming start, mode changes on 4 lanes.
 python3 "$repo_dir/camera/hi846-fixes.py" "$source_dir"
+# Video decoder: end of stream as HarmonyOS's firmware expects it.
+python3 "$repo_dir/video/venus-eos-null.py" "$source_dir"
 # TDM group device setup in q6afe (snd-q6afe.ko), as the downstream driver.
 python3 "$repo_dir/sound/q6afe-tdm-group.py" "$source_dir"
 # TDM invert-sync/data-delay/data-out from the DT actually reach the DSP.
