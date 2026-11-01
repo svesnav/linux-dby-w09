@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* DBY-W09: read the already-running PM8150B GEN4 gauge without configuring it.
  * Register layout, shadow checks and conversions follow Huawei's GPL 4.19
- * fg-reg.h, fg-util.c and smb5-reg.h. The only optional write services the
- * firmware-enabled charger watchdog, as the stock driver's bark handler does.
- * Charge limits, protections, profiles and gauge SRAM are never changed.
+ * fg-reg.h, fg-util.c and smb5-reg.h. Two optional writes: servicing the
+ * firmware-enabled charger watchdog, as the stock driver's bark handler does,
+ * and the USB input current limit from the USB-C supply, as the stock
+ * smblib_set_icl_current() does. Charge (battery) limits, protections,
+ * profiles and gauge SRAM are never changed.
  */
 #include <linux/math64.h>
 #include <linux/devm-helpers.h>
@@ -25,6 +27,17 @@
 #define MATEPAD_WDOG_ON_PLUGIN		BIT(1)
 #define MATEPAD_WDOG_PET		0x1643
 #define MATEPAD_WDOG_PET_INTERVAL	(8 * HZ)
+/* SMB5 input current limit (smb5-reg.h), as smblib_set_icl_current() sets it */
+#define MATEPAD_CMD_ICL_OVERRIDE	0x1342
+#define MATEPAD_ICL_OVERRIDE		BIT(0)
+#define MATEPAD_USBIN_LOAD_CFG		0x1365
+#define MATEPAD_ICL_OVERRIDE_AFTER_APSD	BIT(4)
+#define MATEPAD_USBIN_ICL_OPTIONS	0x1366
+#define MATEPAD_USBIN_MODE_CHG		BIT(0)
+#define MATEPAD_USBIN_CURRENT_LIMIT	0x1370
+#define MATEPAD_ICL_STEP_UA		50000
+#define MATEPAD_ICL_MIN_UA		500000
+#define MATEPAD_ICL_MAX_UA		3000000
 
 struct matepad_fg {
 	struct device *dev;
@@ -37,7 +50,64 @@ struct matepad_fg {
 	int capacity, voltage, current_ua, status;
 	bool service_watchdog;
 	unsigned long next_watchdog;
+	bool set_icl;
+	int icl_ua;			/* limit set from the USB-C supply; 0: firmware's */
+	unsigned int fw_icl[4];		/* firmware's override, load, options, limit */
 };
+
+static const unsigned int matepad_icl_regs[4] = {
+	MATEPAD_CMD_ICL_OVERRIDE, MATEPAD_USBIN_LOAD_CFG,
+	MATEPAD_USBIN_ICL_OPTIONS, MATEPAD_USBIN_CURRENT_LIMIT,
+};
+
+/*
+ * Input current limit from the USB-C supply (TCPM: Type-C current or the PD
+ * contract). Started with power already connected, the charger keeps the
+ * 500 mA USB limit that its detection chose at boot and the battery does not
+ * charge with the screen on; a replug used to be the only way out. With a
+ * current from the USB-C side, set it in high-current mode as the stock
+ * smblib_set_icl_current() does; without one (unplugged, default USB power),
+ * give the charger back the firmware's settings and its own detection.
+ */
+static void matepad_fg_update_icl(struct matepad_fg *fg, bool online)
+{
+	union power_supply_propval val = {};
+	int icl_ua = 0, ret, i;
+
+	if (online && !power_supply_get_property_from_supplier(fg->ac,
+			POWER_SUPPLY_PROP_CURRENT_MAX, &val) && val.intval > 0)
+		icl_ua = rounddown(clamp(val.intval, MATEPAD_ICL_MIN_UA, MATEPAD_ICL_MAX_UA),
+				   MATEPAD_ICL_STEP_UA);
+	if (icl_ua == fg->icl_ua)
+		return;
+
+	if (icl_ua) {
+		ret = regmap_write(fg->map, MATEPAD_USBIN_CURRENT_LIMIT,
+				   icl_ua / MATEPAD_ICL_STEP_UA);
+		if (!ret)
+			ret = regmap_update_bits(fg->map, MATEPAD_USBIN_ICL_OPTIONS,
+						 MATEPAD_USBIN_MODE_CHG, MATEPAD_USBIN_MODE_CHG);
+		if (!ret)
+			ret = regmap_update_bits(fg->map, MATEPAD_CMD_ICL_OVERRIDE,
+						 MATEPAD_ICL_OVERRIDE, 0);
+		if (!ret)
+			ret = regmap_update_bits(fg->map, MATEPAD_USBIN_LOAD_CFG,
+						 MATEPAD_ICL_OVERRIDE_AFTER_APSD,
+						 MATEPAD_ICL_OVERRIDE_AFTER_APSD);
+	} else {
+		for (i = 0, ret = 0; i < ARRAY_SIZE(matepad_icl_regs) && !ret; i++)
+			ret = regmap_write(fg->map, matepad_icl_regs[i], fg->fw_icl[i]);
+	}
+	if (ret) {
+		dev_warn_ratelimited(fg->dev, "Input current limit: %d\n", ret);
+		return;
+	}
+	if (icl_ua)
+		dev_info(fg->dev, "input current limit %d mA from USB-C\n", icl_ua / 1000);
+	else
+		dev_info(fg->dev, "input current limit back to the charger's detection\n");
+	fg->icl_ua = icl_ua;
+}
 
 /* Keep the inherited watchdog armed; never enable charging or clear faults. */
 static void matepad_fg_service_watchdog(struct matepad_fg *fg)
@@ -206,6 +276,8 @@ static void matepad_fg_poll(struct work_struct *work)
 	matepad_fg_service_watchdog(fg);
 	changed = valid != fg->valid || online != fg->online || present != fg->present ||
 		capacity != fg->capacity || status != fg->status;
+	if (fg->set_icl && fg->valid)
+		matepad_fg_update_icl(fg, fg->online);
 	mutex_unlock(&fg->lock);
 	if (changed) {
 		power_supply_changed(fg->battery);
@@ -238,7 +310,7 @@ static int matepad_fg_probe(struct platform_device *pdev)
 	struct power_supply_config config = {};
 	struct matepad_fg *fg;
 	u8 type[2];
-	int ret;
+	int ret, i;
 
 	fg = devm_kzalloc(dev, sizeof(*fg), GFP_KERNEL);
 	if (!fg)
@@ -257,6 +329,12 @@ static int matepad_fg_probe(struct platform_device *pdev)
 		return ret;
 	if (type[0] != 0x0d || type[1] != 0x10)
 		return dev_err_probe(dev, -ENODEV, "Unexpected fuel gauge type\n");
+	fg->set_icl = device_property_read_bool(dev, "huawei,set-input-current-limit");
+	for (i = 0; fg->set_icl && i < ARRAY_SIZE(matepad_icl_regs); i++) {
+		ret = regmap_read(fg->map, matepad_icl_regs[i], &fg->fw_icl[i]);
+		if (ret)
+			return ret;
+	}
 	mutex_init(&fg->lock);
 	fg->valid = !matepad_fg_refresh(fg);
 	matepad_fg_service_watchdog(fg);
@@ -272,8 +350,8 @@ static int matepad_fg_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 	schedule_delayed_work(&fg->poll, HZ);
-	dev_info(dev, "GEN4 battery reporting enabled; charger watchdog service %s\n",
-		 fg->service_watchdog ? "enabled" : "disabled");
+	dev_info(dev, "GEN4 battery reporting enabled; charger watchdog service %s; input current limit from USB-C %s\n",
+		 fg->service_watchdog ? "enabled" : "disabled", fg->set_icl ? "enabled" : "disabled");
 	return 0;
 }
 
@@ -287,4 +365,4 @@ static struct platform_driver matepad_fg_driver = {
 };
 module_platform_driver(matepad_fg_driver);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Read-only Huawei MatePad 11 PM8150B battery reporting");
+MODULE_DESCRIPTION("Huawei MatePad 11 PM8150B battery reporting and USB-C input current limit");

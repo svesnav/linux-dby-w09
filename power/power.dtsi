@@ -7,6 +7,9 @@
 			compatible = "huawei,dby-w09-fg";
 			reg = <0x4000>;
 			huawei,service-charger-watchdog;
+			/* the USB input limit follows the USB-C supply (TCPM) */
+			huawei,set-input-current-limit;
+			power-supplies = <&pm8150b_typec>;
 		};
 	};
 };

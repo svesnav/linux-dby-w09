@@ -28,6 +28,16 @@ through the standard power-supply interface.
   operation as the stock `wdog_bark_irq_handler`. It never enables charging,
   clears faults, disables the watchdog or touches thermal and charge-limit
   settings; if the firmware disabled the watchdog, nothing is written.
+- **USB input current limit** (`huawei,set-input-current-limit`, with
+  `power-supplies` pointing at the Type-C port). Started with a charger
+  already connected, the SMB5 keeps the 500 mA USB limit its detection chose
+  at boot, and with the screen on the battery does not charge until a
+  replug. While a charger is connected, the driver sets the input limit to
+  what the USB-C side reports (TCPM: Type-C current or the PD contract,
+  0.5–3 A) in high-current mode, the registers the stock
+  `smblib_set_icl_current()` writes. Without a USB-C current (unplugged,
+  default USB power) it restores the firmware's settings, so the charger's
+  own detection decides.
 
 Register definitions and conversions follow Huawei's GPL 4.19 sources
 (`fg-reg.h`, `fg-util.c`, `smb5-reg.h`).
