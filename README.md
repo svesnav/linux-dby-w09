@@ -14,7 +14,7 @@ app that installs both lives in
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Display (2560×1600, 120 Hz) | works | DSI panel driver `panel/`, RT8555 backlight |
+| Display (2560×1600, 120 Hz) | works | DSI panel driver `panel/`, RT8555 backlight on a perceptual brightness curve |
 | GPU (Adreno 650) | works | freedreno; Huawei-signed zap shader from the tablet |
 | Touchscreen | works | `touch/huawei-thp-lite.c` + Huawei's `aptouch_daemon` from the tablet |
 | M-Pencil | works | position via the touch daemon, pressure over BLE |
@@ -24,10 +24,11 @@ app that installs both lives in
 | Sensors, auto-rotation | work | SLPI over QRTR, served by hexagonrpcd |
 | Volume/power keys, cover, keyboard folio | work | hall sensors: cover on gpio113 (lid switch), folio dock on gpio121 (tablet-mode switch) |
 | USB-C host, DP Alt Mode, HDMI audio | work | `usb/README.md` |
-| Battery, charging LED | work | `power/matepad-fg.c`, `power/README.md` |
+| Battery, charging, charging LED | work | `power/matepad-fg.c`: input current limit from USB-C (5 V, up to 3 A); `power/README.md` |
 | Flashlight (rear flash LED) | works | PM8150L flash block, `white:flash` (torch mode) |
 | Suspend | works | Sleep button suspends; cover/power key blank the screen |
 | Cameras | work | rear OV13B10 with DW9714 autofocus lens, front Hi-846; CAMSS raw capture, libcamera software ISP (`camera/`) |
+| Video decoder (Venus) | works | V4L2 decoder with the tablet's firmware, H.264 tested (FFmpeg `h264_v4l2m2m`); end-of-stream fix `video/`; Firefox does not use it yet |
 | RTC | not supported | time comes from NTP |
 
 ## Boot flow
