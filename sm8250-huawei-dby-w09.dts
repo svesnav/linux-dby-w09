@@ -728,6 +728,16 @@
 };
 
 /*
+ * Video decoder/encoder (Venus, V4L2 memory-to-memory) with HarmonyOS's
+ * firmware from the modem partition (image/venus.*); stock loads it into the
+ * same pil_video_region at 0x86e00000 as video_mem here.
+ */
+&venus {
+	firmware-name = "qcom/sm8250/huawei/dby-w09/venus.mdt";
+	status = "okay";
+};
+
+/*
  * Speakers: four NXP TFA9874 smart amps on i2c3 (0x34-0x37, stock
  * smartpakit nodes), audio on PRIMARY TDM (GPIO 138-141) with LPASS as the
  * 6.144 MHz clock master, the stock qcom,msm-dai-tdm-pri-rx settings.

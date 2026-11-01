@@ -10,13 +10,17 @@
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
+#include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/regmap.h>
 
 #define RT8555_REG_LEVEL_LSB	0x04
 #define RT8555_REG_LEVEL_MSB	0x05
-#define RT8555_MAX_LEVEL	1023
+#define RT8555_MAX_BRIGHTNESS	1023
+/* lcd-kit,panel-bl-min/max of the stock panel node (30 and 3932 of 4095) */
+#define RT8555_LEVEL_MIN	8
+#define RT8555_LEVEL_MAX	982
 
 struct rt8555 {
 	struct regmap *regmap;
@@ -53,14 +57,36 @@ static int rt8555_power(struct rt8555 *rt, bool on)
 	return 0;
 }
 
+/*
+ * The LED current is linear in the level, the eye is not: brightness is a
+ * CIE 1931 lightness (as pwm_bl's default curve), so the slider changes the
+ * screen evenly instead of jumping at its low end.
+ */
+static unsigned int rt8555_level(unsigned int brightness)
+{
+	u64 lightness = div_u64((u64)brightness << 16, RT8555_MAX_BRIGHTNESS) * 100;
+	u64 y;
+
+	if (lightness <= 8ULL << 16) {
+		y = DIV_ROUND_CLOSEST_ULL(lightness * 10, 9033);
+	} else {
+		y = div_u64(lightness + (16ULL << 16), 116);
+		y = (y * y * y + (1ULL << 31)) >> 32;
+	}
+	return RT8555_LEVEL_MIN +
+		DIV_ROUND_CLOSEST_ULL(y * (RT8555_LEVEL_MAX - RT8555_LEVEL_MIN), 1 << 16);
+}
+
 static int rt8555_update_status(struct backlight_device *bl)
 {
 	struct rt8555 *rt = bl_get_data(bl);
-	unsigned int level = backlight_get_brightness(bl);
+	unsigned int brightness = backlight_get_brightness(bl);
+	unsigned int level;
 	int ret;
 
-	if (!level)
+	if (!brightness)
 		return rt8555_power(rt, false);
+	level = rt8555_level(brightness);
 
 	ret = rt8555_power(rt, true);
 	if (ret)
@@ -86,9 +112,9 @@ static int rt8555_probe(struct i2c_client *client)
 {
 	struct backlight_properties props = {
 		.type = BACKLIGHT_RAW,
-		.max_brightness = RT8555_MAX_LEVEL,
+		.max_brightness = RT8555_MAX_BRIGHTNESS,
 		.brightness = 512,
-		.scale = BACKLIGHT_SCALE_LINEAR,
+		.scale = BACKLIGHT_SCALE_NON_LINEAR,
 	};
 	struct device *dev = &client->dev;
 	struct backlight_device *bl;
