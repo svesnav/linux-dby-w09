@@ -5,10 +5,11 @@ SM8250 / Snapdragon 865). This repository holds the kernel side: the board
 device tree, out-of-tree drivers, patch scripts for upstream drivers, and the
 tools that build the boot images.
 
-The matching Kubuntu system (image builder and userspace services) lives in
-[kubuntu-dby-w09](https://github.com/svesnav/kubuntu-dby-w09). The HarmonyOS
-app that installs both lives in
-[dby-w09-installer](https://github.com/svesnav/dby-w09-installer).
+| Repository | Role |
+| --- | --- |
+| **linux-dby-w09** (this one) | kernel, device tree, boot bundle |
+| [kubuntu-dby-w09](https://github.com/svesnav/kubuntu-dby-w09) | Kubuntu image and hardware services |
+| [dby-w09-installer](https://github.com/svesnav/dby-w09-installer) | the HarmonyOS app |
 
 ## Hardware status
 
