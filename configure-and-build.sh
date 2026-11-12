@@ -98,6 +98,9 @@ module_options=(BT_HCIUART_SERDEV BT_HCIUART_QCA)
 extra_modules=(EXFAT_FS NTFS3_FS USB_UAS)
 # Rear camera flash LED (PM8150L), used as the flashlight.
 extra_modules+=(LEDS_QCOM_FLASH)
+# RTC: rtc-pm8xxx only accepts RTC_SET_TIME when it has an SDAM nvmem cell
+# for the offset; the PM8150 offers one at 0xb100 (power/power.dtsi).
+extra_modules+=(NVMEM_SPMI_SDAM)
 # Cameras: camera clocks, CCI (sensor I2C), CAMSS and the two sensors.
 extra_modules+=(SM_CAMCC_8250 I2C_QCOM_CCI VIDEO_QCOM_CAMSS VIDEO_OV13B10 VIDEO_HI846
     VIDEO_DW9714)

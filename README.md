@@ -30,7 +30,7 @@ tools that build the boot images.
 | Suspend | works | Sleep button suspends; cover/power key blank the screen |
 | Cameras | work | rear OV13B10 with DW9714 autofocus lens, front Hi-846; CAMSS raw capture, libcamera software ISP (`camera/`) |
 | Video decoder (Venus) | works | V4L2 decoder with the tablet's firmware, H.264 tested (FFmpeg `h264_v4l2m2m`); end-of-stream fix `video/`; Firefox does not use it yet |
-| RTC | not supported | time comes from NTP |
+| RTC | works | `power/power.dtsi`: the PM8150's SDAM at 0xb100 as rtc-pm8xxx's offset cell (`CONFIG_NVMEM_SPMI_SDAM`); `hwclock --systohc` returns 0 and a cold boot starts on the right time, before NTP |
 
 ## Boot flow
 
