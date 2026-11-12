@@ -52,3 +52,34 @@
 		flash-max-timeout-us = <1280000>;
 	};
 };
+
+/* RTC: the PM8150's RTC block reads fine on its own, but RTC_SET_TIME is
+ * refused with -ENODEV unless rtc-pm8xxx has an nvmem cell to keep the
+ * offset between the raw counter and the epoch (pm8xxx_rtc_update_offset()
+ * returns -ENODEV when it has neither an nvmem cell nor the UEFI fallback,
+ * and a tablet that boots through ABL has no EFI variables).
+ *
+ * The PM8150 offers scratch memory for exactly that in SDAM 0xb100, and
+ * HarmonyOS uses it itself (qcom,pm8150@0/sdam@b100 in the stock DTBO).
+ * Nothing else in mainline binds that address on this platform, so it is
+ * free: the offset survives a reboot in PMIC scratch memory, which is what
+ * the driver expects.
+ */
+&pm8150_0 {
+	rtc@6000 {
+		nvmem-cells = <&rtc_offset>;
+		nvmem-cell-names = "offset";
+	};
+
+	sdam@b100 {
+		compatible = "qcom,spmi-sdam";
+		reg = <0xb100 0x100>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0 0xb100 0x100>;
+
+		rtc_offset: rtc-offset@78 {
+			reg = <0x78 0x4>;
+		};
+	};
+};
